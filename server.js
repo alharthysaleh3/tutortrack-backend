@@ -17,16 +17,17 @@ app.get('/', (req, res) => {
 
 app.post('/api/ask', async (req, res) => {
   try {
-    const { message } = req.body;
-    if (!message) {
-      return res.status(400).json({ error: 'message is required' });
+    const { system, messages } = req.body;
+    if (!messages || !Array.isArray(messages)) {
+      return res.status(400).json({ error: 'messages array is required' });
     }
     const response = await anthropic.messages.create({
-      model: 'claude-sonnet-4-5',
-      max_tokens: 1000,
-      messages: [{ role: 'user', content: message }],
+      model: 'claude-sonnet-4-6',
+      max_tokens: 1024,
+      system: system || '',
+      messages: messages,
     });
-    res.json({ reply: response.content[0].text });
+    res.json({ content: response.content });
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
