@@ -3,8 +3,8 @@ const express = require('express');
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
 const { google } = require('googleapis');
-const admin = require('firebase-admin');
-const path = require('path');
+const { initializeApp, cert } = require('firebase-admin/app');
+const { getFirestore } = require('firebase-admin/firestore');
 
 const app = express();
 app.use(cors());
@@ -19,10 +19,10 @@ const fs = require('fs');
 const serviceAccount = JSON.parse(fs.readFileSync('/etc/secrets/service-account.json', 'utf8'));
 
 // --- إعداد Firebase Admin (لتحديث Firestore بعد التحقق) ---
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount)
+initializeApp({
+  credential: cert(serviceAccount)
 });
-const db = admin.firestore();
+const db = getFirestore();
 
 // --- إعداد Google Play Developer API ---
 const androidPublisherAuth = new google.auth.GoogleAuth({
