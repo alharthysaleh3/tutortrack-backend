@@ -15,7 +15,8 @@ const anthropic = new Anthropic({
 });
 
 // --- قراءة مفتاح الخدمة من متغير البيئة (وليس ملف) ---
-const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+const fs = require('fs');
+const serviceAccount = JSON.parse(fs.readFileSync('/etc/secrets/service-account.json', 'utf8'));
 
 // --- إعداد Firebase Admin (لتحديث Firestore بعد التحقق) ---
 admin.initializeApp({
