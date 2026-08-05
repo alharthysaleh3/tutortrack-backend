@@ -2,6 +2,9 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const Anthropic = require('@anthropic-ai/sdk');
+const { google } = require('googleapis');
+const admin = require('firebase-admin');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -10,6 +13,26 @@ app.use(express.json());
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
+
+// --- قراءة مفتاح الخدمة من متغير البيئة (وليس ملف) ---
+const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+
+// --- إعداد Firebase Admin (لتحديث Firestore بعد التحقق) ---
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount)
+});
+const db = admin.firestore();
+
+// --- إعداد Google Play Developer API ---
+const androidPublisherAuth = new google.auth.GoogleAuth({
+  credentials: serviceAccount,
+  scopes: ['https://www.googleapis.com/auth/androidpublisher']
+});const androidpublisher = google.androidpublisher({
+  version: 'v3',
+  auth: androidPublisherAuth
+});
+
+const PACKAGE_NAME = 'com.salehlharthy.tutortrack';
 
 app.get('/', (req, res) => {
   res.json({ status: 'TutorTrack backend is running' });
@@ -31,6 +54,43 @@ app.post('/api/ask', async (req, res) => {
   } catch (error) {
     console.error(error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// --- نقطة التحقق من صحة الاشتراك ---
+app.post('/api/verify-purchase', async (req, res) => {
+  try {
+    const { purchaseToken, productId, familyId } = req.body;
+
+    if (!purchaseToken || !productId || !familyId) {
+      return res.status(400).json({ error: 'purchaseToken, productId, and familyId are required' });
+    }
+
+    const result = await androidpublisher.purchases.subscriptions.get({
+      packageName: PACKAGE_NAME,
+      subscriptionId: productId,
+      token: purchaseToken
+    });
+
+    const purchase = result.data;
+    const expiresAtMillis = parseInt(purchase.expiryTimeMillis, 10);
+    const isValid = expiresAtMillis > Date.now();
+
+    if (!isValid) {
+      return res.json({ success: false, error: 'الاشتراك منتهي الصلاحية' });
+    }
+
+    // تحديث Firestore مباشرة من الخادم (آمن، لا يمر عبر التطبيق)
+    await db.collection('families').doc(familyId).update({
+      subscriptionStatus: 'premium',
+      subscriptionExpiresAt: expiresAtMillis,
+      subscriptionProductId: productId
+    });
+
+    res.json({ success: true, expiresAt: expiresAtMillis });
+  } catch (error) {
+    console.error('خطأ في التحقق من الشراء:', error);
+    res.status(500).json({ success: false, error: error.message });
   }
 });
 
