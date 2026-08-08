@@ -1,15 +1,59 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const Anthropic = require('@anthropic-ai/sdk');
 const { google } = require('googleapis');
 const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
+const fs = require('fs');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
+
+const serviceAccount = JSON.parse(fs.readFileSync('/etc/secrets/service-account.json', 'utf8'));
+
+initializeApp({
+  credential: cert(serviceAccount)
+});
+const db = getFirestore();
+
+const androidPublisherAuth = new google.auth.GoogleAuth({
+  credentials: serviceAccount,
+  scopes: ['https://www.googleapis.com/auth/androidpublisher']
+});
+const androidpublisher = google.androidpublisher({
+  version: 'v3',
+  auth: androidPublisherAuth
+});
+
+const PACKAGE_NAME = 'com.salehlharthy.tutortrack';
+
+// --- حماية من الإغراق بالطلبات (Rate Limiting) ---
+const apiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: 'تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler: async (req, res) => {
+    try {
+      await db.collection('securityEvents').add({
+        type: 'rate_limit_exceeded',
+        detail: `IP: ${req.ip} - Endpoint: ${req.path}`,
+        createdAt: Date.now()
+      });
+    } catch (e) { console.error('Failed to log security event:', e); }
+    res.status(429).json({ error: 'تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً.' });
+  }
+});
+
+app.use('/api/', apiLimiter);
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
