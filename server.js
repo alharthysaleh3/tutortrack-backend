@@ -97,11 +97,27 @@ app.post('/api/verify-purchase', async (req, res) => {
     if (!isValid) {
       return res.json({ success: false, error: 'الاشتراك منتهي الصلاحية' });
     }
+
     await db.collection('families').doc(familyId).update({
       subscriptionStatus: 'premium',
       subscriptionExpiresAt: expiresAtMillis,
       subscriptionProductId: productId
     });
+
+    // تسجيل عملية الشراء في سجل منفصل لعرضه في لوحة الإدارة
+    const familyDoc = await db.collection('families').doc(familyId).get();
+    const familyData = familyDoc.exists ? familyDoc.data() : {};
+
+    await db.collection('purchases').add({
+      familyId,
+      ownerEmail: familyData.ownerEmail || 'unknown',
+      productId,
+      purchaseToken,
+      expiresAt: expiresAtMillis,
+      purchasedAt: Date.now(),
+      orderId: purchase.orderId || null
+    });
+
     res.json({ success: true, expiresAt: expiresAtMillis });
   } catch (error) {
     console.error('خطأ في التحقق من الشراء:', error);
@@ -113,17 +129,14 @@ app.post('/api/verify-purchase', async (req, res) => {
 app.post('/api/admin/delete-family', async (req, res) => {
   try {
     const { familyId, ownerUid } = req.body;
-
     if (!familyId || !ownerUid) {
       return res.status(400).json({ error: 'familyId and ownerUid are required' });
     }
-
     try {
       await authAdmin.deleteUser(ownerUid);
     } catch (authErr) {
       console.error('تحذير: فشل حذف حساب Auth (قد يكون محذوفاً بالفعل):', authErr.message);
     }
-
     const collections = ['teachers', 'sessions', 'monthlyConfirmations', 'supportTickets'];
     for (const col of collections) {
       const snap = await db.collection(col).where('familyId', '==', familyId).get();
@@ -131,9 +144,7 @@ app.post('/api/admin/delete-family', async (req, res) => {
       snap.docs.forEach((doc) => batch.delete(doc.ref));
       if (!snap.empty) await batch.commit();
     }
-
     await db.collection('families').doc(familyId).delete();
-
     res.json({ success: true });
   } catch (error) {
     console.error('خطأ في حذف العائلة:', error);
