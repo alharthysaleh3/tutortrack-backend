@@ -86,14 +86,19 @@ app.post('/api/verify-purchase', async (req, res) => {
     if (!purchaseToken || !productId || !familyId) {
       return res.status(400).json({ error: 'purchaseToken, productId, and familyId are required' });
     }
-    const result = await androidpublisher.purchases.subscriptions.get({
+    const result = await androidpublisher.purchases.subscriptionsv2.get({
       packageName: PACKAGE_NAME,
-      subscriptionId: productId,
       token: purchaseToken
     });
     const purchase = result.data;
-    const expiresAtMillis = parseInt(purchase.expiryTimeMillis, 10);
-    const isValid = expiresAtMillis > Date.now();
+
+    const lineItem = purchase.lineItems?.[0];
+    const expiresAtMillis = lineItem?.expiryTime
+      ? new Date(lineItem.expiryTime).getTime()
+      : 0;
+    const isValid = expiresAtMillis > Date.now() &&
+      (purchase.subscriptionState === 'SUBSCRIPTION_STATE_ACTIVE' ||
+       purchase.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD');
     if (!isValid) {
       return res.json({ success: false, error: 'الاشتراك منتهي الصلاحية' });
     }
