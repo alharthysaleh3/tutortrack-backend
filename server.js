@@ -8,6 +8,7 @@ const { initializeApp, cert } = require('firebase-admin/app');
 const { getFirestore } = require('firebase-admin/firestore');
 const { getAuth } = require('firebase-admin/auth');
 const fs = require('fs');
+const cron = require('node-cron');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -157,6 +158,130 @@ app.post('/api/admin/delete-family', async (req, res) => {
     res.status(500).json({ success: false, error: error.message });
   }
 });
+
+/* ---------------- نظام الإشعارات المجدولة ---------------- */
+
+async function sendExpoPushNotification(pushToken, title, body) {
+  if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
+  try {
+    await fetch('https://exp.host/--/api/v2/push/send', {
+      method: 'POST',
+      headers: {
+        'Accept': 'application/json',
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        to: pushToken,
+        title,
+        body,
+        sound: 'default'
+      })
+    });
+  } catch (err) {
+    console.error('فشل إرسال إشعار:', err.message);
+  }
+}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+// ── تذكير يومي للمدرّسين الذين لم يسجّلوا حصة اليوم — 8 مساءً بتوقيت عُمان (UTC+4) ──
+cron.schedule('0 16 * * *', async () => {
+  console.log('تشغيل: تذكير المدرّسين اليومي');
+  try {
+    const teachersSnap = await db.collection('teachers').where('status', '==', 'approved').get();
+    const today = todayStr();
+
+    for (const teacherDoc of teachersSnap.docs) {
+      const teacher = teacherDoc.data();
+      if (!teacher.pushToken) continue;
+
+      const sessionsToday = await db.collection('sessions')
+        .where('teacherId', '==', teacherDoc.id)
+        .where('date', '==', today)
+        .limit(1)
+        .get();
+
+      if (sessionsToday.empty) {
+        await sendExpoPushNotification(
+          teacher.pushToken,
+          '📝 تذكير من TutorTrack',
+          'لم تسجّل أي حصة اليوم بعد. لا تنسَ تسجيل حصصك!'
+        );
+      }
+    }
+  } catch (err) {
+    console.error('خطأ في تذكير المدرّسين:', err.message);
+  }
+}, { timezone: 'Asia/Muscat' });
+
+// ── تذكير يومي لأولياء الأمور بالحصص المعلّقة — 9 مساءً بتوقيت عُمان ──
+cron.schedule('0 17 * * *', async () => {
+  console.log('تشغيل: تذكير أولياء الأمور اليومي');
+  try {
+    const familiesSnap = await db.collection('families').get();
+
+    for (const familyDoc of familiesSnap.docs) {
+      const family = familyDoc.data();
+      if (!family.pushToken) continue;
+
+      const pendingSnap = await db.collection('sessions')
+        .where('familyId', '==', familyDoc.id)
+        .where('status', '==', 'pending')
+        .get();
+
+      if (pendingSnap.size > 0) {
+        await sendExpoPushNotification(
+          family.pushToken,
+          '🔔 تذكير من TutorTrack',
+          `لديك ${pendingSnap.size} حصة بانتظار موافقتك`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('خطأ في تذكير أولياء الأمور:', err.message);
+  }
+}, { timezone: 'Asia/Muscat' });
+
+// ── ملخص أسبوعي — كل جمعة 6 مساءً بتوقيت عُمان ──
+cron.schedule('0 14 * * 5', async () => {
+  console.log('تشغيل: الملخص الأسبوعي');
+  try {
+    const familiesSnap = await db.collection('families').get();
+    const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+
+    for (const familyDoc of familiesSnap.docs) {
+      const family = familyDoc.data();
+      if (!family.pushToken) continue;
+
+      const sessionsSnap = await db.collection('sessions')
+        .where('familyId', '==', familyDoc.id)
+        .where('status', 'in', ['approved', 'paid'])
+        .get();
+
+      const weekSessions = sessionsSnap.docs.filter((d) => {
+        const s = d.data();
+        return s.createdAt && s.createdAt >= weekAgo;
+      });
+
+      if (weekSessions.length > 0) {
+        const total = weekSessions.reduce((sum, d) => {
+          const s = d.data();
+          return sum + (s.rate || 0) * (s.duration || 0);
+        }, 0);
+
+        await sendExpoPushNotification(
+          family.pushToken,
+          '📊 ملخصك الأسبوعي',
+          `هذا الأسبوع: ${weekSessions.length} حصة بإجمالي ${total.toFixed(3)} ر.ع`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('خطأ في الملخص الأسبوعي:', err.message);
+  }
+}, { timezone: 'Asia/Muscat' });
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
