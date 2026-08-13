@@ -58,6 +58,25 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
+// ── قياس زمن الاستجابة لكل طلب وتسجيله ──
+app.use('/api/', (req, res, next) => {
+  const startTime = Date.now();
+  res.on('finish', async () => {
+    const durationMs = Date.now() - startTime;
+    try {
+      await db.collection('performanceLogs').add({
+        endpoint: req.path,
+        durationMs,
+        success: res.statusCode < 400,
+        createdAt: Date.now()
+      });
+    } catch (e) {
+      console.error('Failed to log performance:', e.message);
+    }
+  });
+  next();
+});
+
 app.get('/', (req, res) => {
   res.json({ status: 'TutorTrack backend is running' });
 });
@@ -77,6 +96,16 @@ app.post('/api/ask', async (req, res) => {
     res.json({ content: response.content });
   } catch (error) {
     console.error(error);
+    try {
+      await db.collection('appErrors').add({
+        type: 'network_error',
+        message: error.message || 'Unknown error in /api/ask',
+        screen: 'backend:/api/ask',
+        userRole: 'unknown',
+        familyId: null,
+        createdAt: Date.now()
+      });
+    } catch (e) {}
     res.status(500).json({ error: error.message });
   }
 });
@@ -128,11 +157,22 @@ app.post('/api/verify-purchase', async (req, res) => {
     res.json({ success: true, expiresAt: expiresAtMillis });
   } catch (error) {
     console.error('خطأ في التحقق من الشراء:', error);
+    try {
+      await db.collection('appErrors').add({
+        type: 'purchase_error',
+        message: error.message || 'Unknown purchase verification error',
+        screen: 'backend:/api/verify-purchase',
+        userRole: 'unknown',
+        familyId: req.body?.familyId || null,
+        createdAt: Date.now()
+      });
+    } catch (e) {}
     res.status(500).json({ success: false, error: error.message });
   }
 });
 
-// --- حذف حساب عائلة بالكامل (Auth + كل بياناتها في Firestore) ---
+// --- حذف حساب عائلة بالكامل
+ Firestore) ---
 app.post('/api/admin/delete-family', async (req, res) => {
   try {
     const { familyId, ownerUid } = req.body;
