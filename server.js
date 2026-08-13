@@ -57,63 +57,63 @@ const apiLimiter = rateLimit({
   }
 });
 app.use('/api/', apiLimiter);
-// --- Suspicious IP activity tracking (in-memory, resets on restart) ---
+// --- Suspicious IP activity tracking + auto-block (in-memory, resets on restart) ---
 const ipActivityMap = new Map(); // ip -> { count, firstSeen }
+const blockedIPs = new Map(); // ip -> blockedUntilTimestamp
 const SUSPICIOUS_THRESHOLD = 20; // عدد الطلبات
 const SUSPICIOUS_WINDOW_MS = 60 * 1000; // خلال دقيقة واحدة
+const BLOCK_DURATION_MS = 30 * 60 * 1000; // 30 دقيقة حظر
 
 app.use('/api/', async (req, res, next) => {
   const ip = req.ip || 'unknown';
   const now = Date.now();
-  const entry = ipActivityMap.get(ip);
 
+  // تحقق أولاً: هل هذا IP محظور حالياً؟
+  const blockedUntil = blockedIPs.get(ip);
+  if (blockedUntil && blockedUntil > now) {
+    const minutesLeft = Math.ceil((blockedUntil - now) / 60000);
+    return res.status(403).json({
+      error: `تم حظر هذا العنوان مؤقتاً بسبب نشاط مشبوه. حاول بعد ${minutesLeft} دقيقة.`
+    });
+  }
+  if (blockedUntil && blockedUntil <= now) {
+    blockedIPs.delete(ip); // انتهت مدة الحظر
+  }
+
+  const entry = ipActivityMap.get(ip);
   if (!entry || now - entry.firstSeen > SUSPICIOUS_WINDOW_MS) {
     ipActivityMap.set(ip, { count: 1, firstSeen: now });
   } else {
     entry.count += 1;
     if (entry.count === SUSPICIOUS_THRESHOLD) {
+      // حظر فعلي تلقائي
+      blockedIPs.set(ip, now + BLOCK_DURATION_MS);
       try {
         await db.collection('securityEvents').add({
           type: 'suspicious_ip',
-          detail: `IP ${ip} أرسل ${SUSPICIOUS_THRESHOLD}+ طلب خلال دقيقة واحدة`,
+          detail: `تم حظر IP ${ip} تلقائياً لمدة 30 دقيقة بعد إرسال ${SUSPICIOUS_THRESHOLD}+ طلب خلال دقيقة واحدة`,
           ip,
           createdAt: Date.now()
         });
       } catch (e) { console.error('Failed to log suspicious IP:', e); }
+      return res.status(403).json({
+        error: 'تم حظر هذا العنوان مؤقتاً بسبب نشاط مشبوه. حاول بعد 30 دقيقة.'
+      });
     }
   }
   next();
 });
 
-// تنظيف دوري للخريطة كل 5 دقائق لتفادي تسرب الذاكرة
+// تنظيف دوري لخريطتي التتبع والحظر كل 5 دقائق
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of ipActivityMap.entries()) {
-    if (now - entry.firstSeen > SUSPICIOUS_WINDOW_MS) {
-      ipActivityMap.delete(ip);
-    }
+    if (now - entry.firstSeen > SUSPICIOUS_WINDOW_MS) ipActivityMap.delete(ip);
+  }
+  for (const [ip, until] of blockedIPs.entries()) {
+    if (until <= now) blockedIPs.delete(ip);
   }
 }, 5 * 60 * 1000);
-
-// --- Track response time for every request ---
-app.use('/api/', (req, res, next) => {
-  const startTime = Date.now();
-  res.on('finish', async () => {
-    const durationMs = Date.now() - startTime;
-    try {
-      await db.collection('performanceLogs').add({
-        endpoint: req.path,
-        durationMs,
-        success: res.statusCode < 400,
-        createdAt: Date.now()
-      });
-    } catch (e) {
-      console.error('Failed to log performance:', e.message);
-    }
-  });
-  next();
-});
-
 app.get('/', (req, res) => {
   res.json({ status: 'TutorTrack backend is running' });
 });
