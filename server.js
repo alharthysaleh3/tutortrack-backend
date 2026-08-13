@@ -38,7 +38,7 @@ const androidpublisher = google.androidpublisher({
 
 const PACKAGE_NAME = 'com.salehlharthy.tutortrack';
 
-// --- حماية من الإغراق بالطلبات (Rate Limiting) ---
+// --- Rate limiting protection ---
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
@@ -58,7 +58,7 @@ const apiLimiter = rateLimit({
 });
 app.use('/api/', apiLimiter);
 
-// ── قياس زمن الاستجابة لكل طلب وتسجيله ──
+// --- Track response time for every request ---
 app.use('/api/', (req, res, next) => {
   const startTime = Date.now();
   res.on('finish', async () => {
@@ -110,7 +110,7 @@ app.post('/api/ask', async (req, res) => {
   }
 });
 
-// --- نقطة التحقق من صحة الاشتراك ---
+// --- Verify subscription purchase ---
 app.post('/api/verify-purchase', async (req, res) => {
   try {
     const { purchaseToken, productId, familyId } = req.body;
@@ -122,7 +122,6 @@ app.post('/api/verify-purchase', async (req, res) => {
       token: purchaseToken
     });
     const purchase = result.data;
-
     const lineItem = purchase.lineItems?.[0];
     const expiresAtMillis = lineItem?.expiryTime
       ? new Date(lineItem.expiryTime).getTime()
@@ -133,17 +132,14 @@ app.post('/api/verify-purchase', async (req, res) => {
     if (!isValid) {
       return res.json({ success: false, error: 'الاشتراك منتهي الصلاحية' });
     }
-
     await db.collection('families').doc(familyId).update({
       subscriptionStatus: 'premium',
       subscriptionExpiresAt: expiresAtMillis,
       subscriptionProductId: productId
     });
 
-    // تسجيل عملية الشراء في سجل منفصل لعرضه في لوحة الإدارة
     const familyDoc = await db.collection('families').doc(familyId).get();
     const familyData = familyDoc.exists ? familyDoc.data() : {};
-
     await db.collection('purchases').add({
       familyId,
       ownerEmail: familyData.ownerEmail || 'unknown',
@@ -171,8 +167,7 @@ app.post('/api/verify-purchase', async (req, res) => {
   }
 });
 
-// --- حذف حساب عائلة بالكامل
- Firestore) ---
+// --- Delete family account completely (Auth + all Firestore data) ---
 app.post('/api/admin/delete-family', async (req, res) => {
   try {
     const { familyId, ownerUid } = req.body;
@@ -199,7 +194,7 @@ app.post('/api/admin/delete-family', async (req, res) => {
   }
 });
 
-/* ---------------- نظام الإشعارات المجدولة ---------------- */
+/* ---------------- Scheduled notifications ---------------- */
 
 async function sendExpoPushNotification(pushToken, title, body) {
   if (!pushToken || !pushToken.startsWith('ExponentPushToken')) return;
@@ -226,23 +221,20 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10);
 }
 
-// ── تذكير يومي للمدرّسين الذين لم يسجّلوا حصة اليوم — 8 مساءً بتوقيت عُمان (UTC+4) ──
+// Daily teacher reminder - 8 PM Oman time
 cron.schedule('0 16 * * *', async () => {
   console.log('تشغيل: تذكير المدرّسين اليومي');
   try {
     const teachersSnap = await db.collection('teachers').where('status', '==', 'approved').get();
     const today = todayStr();
-
     for (const teacherDoc of teachersSnap.docs) {
       const teacher = teacherDoc.data();
       if (!teacher.pushToken) continue;
-
       const sessionsToday = await db.collection('sessions')
         .where('teacherId', '==', teacherDoc.id)
         .where('date', '==', today)
         .limit(1)
         .get();
-
       if (sessionsToday.empty) {
         await sendExpoPushNotification(
           teacher.pushToken,
@@ -256,21 +248,18 @@ cron.schedule('0 16 * * *', async () => {
   }
 }, { timezone: 'Asia/Muscat' });
 
-// ── تذكير يومي لأولياء الأمور بالحصص المعلّقة — 9 مساءً بتوقيت عُمان ──
+// Daily parent reminder - 9 PM Oman time
 cron.schedule('0 17 * * *', async () => {
   console.log('تشغيل: تذكير أولياء الأمور اليومي');
   try {
     const familiesSnap = await db.collection('families').get();
-
     for (const familyDoc of familiesSnap.docs) {
       const family = familyDoc.data();
       if (!family.pushToken) continue;
-
       const pendingSnap = await db.collection('sessions')
         .where('familyId', '==', familyDoc.id)
         .where('status', '==', 'pending')
         .get();
-
       if (pendingSnap.size > 0) {
         await sendExpoPushNotification(
           family.pushToken,
@@ -284,33 +273,28 @@ cron.schedule('0 17 * * *', async () => {
   }
 }, { timezone: 'Asia/Muscat' });
 
-// ── ملخص أسبوعي — كل جمعة 6 مساءً بتوقيت عُمان ──
+// Weekly summary - Friday 6 PM Oman time
 cron.schedule('0 14 * * 5', async () => {
   console.log('تشغيل: الملخص الأسبوعي');
   try {
     const familiesSnap = await db.collection('families').get();
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-
     for (const familyDoc of familiesSnap.docs) {
       const family = familyDoc.data();
       if (!family.pushToken) continue;
-
       const sessionsSnap = await db.collection('sessions')
         .where('familyId', '==', familyDoc.id)
         .where('status', 'in', ['approved', 'paid'])
         .get();
-
       const weekSessions = sessionsSnap.docs.filter((d) => {
         const s = d.data();
         return s.createdAt && s.createdAt >= weekAgo;
       });
-
       if (weekSessions.length > 0) {
         const total = weekSessions.reduce((sum, d) => {
           const s = d.data();
           return sum + (s.rate || 0) * (s.duration || 0);
         }, 0);
-
         await sendExpoPushNotification(
           family.pushToken,
           '📊 ملخصك الأسبوعي',
