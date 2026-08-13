@@ -104,6 +104,26 @@ app.use('/api/', async (req, res, next) => {
   next();
 });
 
+// --- نقطة لرفع حظر IP يدوياً من لوحة الإدارة ---
+app.post('/api/admin/unblock-ip', async (req, res) => {
+  try {
+    const { ip } = req.body;
+    if (!ip) {
+      return res.status(400).json({ error: 'ip is required' });
+    }
+    blockedIPs.delete(ip);
+    await db.collection('securityEvents').add({
+      type: 'account_locked',
+      detail: `تم رفع حظر IP ${ip} يدوياً من لوحة الإدارة`,
+      ip,
+      createdAt: Date.now()
+    });
+    res.json({ success: true });
+  } catch (error) {
+    console.error('خطأ في رفع الحظر:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
 // تنظيف دوري لخريطتي التتبع والحظر كل 5 دقائق
 setInterval(() => {
   const now = Date.now();
