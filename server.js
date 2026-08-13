@@ -97,8 +97,6 @@ setInterval(() => {
 
 // --- Track response time for every request ---
 app.use('/api/', (req, res, next) => {
-// --- Track response time for every request ---
-app.use('/api/', (req, res, next) => {
   const startTime = Date.now();
   res.on('finish', async () => {
     const durationMs = Date.now() - startTime;
