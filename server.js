@@ -57,7 +57,46 @@ const apiLimiter = rateLimit({
   }
 });
 app.use('/api/', apiLimiter);
+// --- Suspicious IP activity tracking (in-memory, resets on restart) ---
+const ipActivityMap = new Map(); // ip -> { count, firstSeen }
+const SUSPICIOUS_THRESHOLD = 20; // عدد الطلبات
+const SUSPICIOUS_WINDOW_MS = 60 * 1000; // خلال دقيقة واحدة
 
+app.use('/api/', async (req, res, next) => {
+  const ip = req.ip || 'unknown';
+  const now = Date.now();
+  const entry = ipActivityMap.get(ip);
+
+  if (!entry || now - entry.firstSeen > SUSPICIOUS_WINDOW_MS) {
+    ipActivityMap.set(ip, { count: 1, firstSeen: now });
+  } else {
+    entry.count += 1;
+    if (entry.count === SUSPICIOUS_THRESHOLD) {
+      try {
+        await db.collection('securityEvents').add({
+          type: 'suspicious_ip',
+          detail: `IP ${ip} أرسل ${SUSPICIOUS_THRESHOLD}+ طلب خلال دقيقة واحدة`,
+          ip,
+          createdAt: Date.now()
+        });
+      } catch (e) { console.error('Failed to log suspicious IP:', e); }
+    }
+  }
+  next();
+});
+
+// تنظيف دوري للخريطة كل 5 دقائق لتفادي تسرب الذاكرة
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of ipActivityMap.entries()) {
+    if (now - entry.firstSeen > SUSPICIOUS_WINDOW_MS) {
+      ipActivityMap.delete(ip);
+    }
+  }
+}, 5 * 60 * 1000);
+
+// --- Track response time for every request ---
+app.use('/api/', (req, res, next) => {
 // --- Track response time for every request ---
 app.use('/api/', (req, res, next) => {
   const startTime = Date.now();
@@ -172,7 +211,29 @@ app.post('/api/admin/delete-family', async (req, res) => {
   try {
     const { familyId, ownerUid } = req.body;
     if (!familyId || !ownerUid) {
+      try {
+        await db.collection('securityEvents').add({
+          type: 'malformed_request',
+          detail: `طلب حذف عائلة بحقول ناقصة من IP: ${req.ip}`,
+          ip: req.ip,
+          createdAt: Date.now()
+        });
+      } catch (e) {}
       return res.status(400).json({ error: 'familyId and ownerUid are required' });
+    }
+
+    // تحقق أن العائلة موجودة فعلاً قبل محاولة الحذف (كشف محاولات عشوائية)
+    const targetDoc = await db.collection('families').doc(familyId).get();
+    if (!targetDoc.exists) {
+      try {
+        await db.collection('securityEvents').add({
+          type: 'unauthorized_admin_access',
+          detail: `محاولة حذف عائلة غير موجودة (familyId: ${familyId}) من IP: ${req.ip}`,
+          ip: req.ip,
+          createdAt: Date.now()
+        });
+      } catch (e) {}
+      return res.status(404).json({ error: 'Family not found' });
     }
     try {
       await authAdmin.deleteUser(ownerUid);
