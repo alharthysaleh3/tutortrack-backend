@@ -405,6 +405,7 @@ app.post('/api/admin/broadcast-notification', async (req, res) => {
       if (segment === 'trial' && !isTrial) return;
       if (segment === 'free' && !isFree) return;
       tokens.push(data.pushToken);
+        db.collection('families').doc(doc.id).collection('notifications').add({ title, body, createdAt: Date.now(), read: false });
     });
     if (tokens.length === 0) return res.json({ sent: 0 });
     const messages = tokens.map(token => ({ to: token, title, body }));
@@ -422,3 +423,4 @@ app.post('/api/admin/broadcast-notification', async (req, res) => {
 });
 
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+
