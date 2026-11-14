@@ -1,4 +1,4 @@
-require('dotenv').config();
+﻿require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
@@ -42,7 +42,7 @@ const PACKAGE_NAME = 'com.salehlharthy.tutortrack';
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 30,
-  message: { error: 'تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً.' },
+  message: { error: 'ØªÙ… ØªØ¬Ø§ÙˆØ² Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ Ù…Ù† Ø§Ù„Ø·Ù„Ø¨Ø§Øª. Ø­Ø§ÙˆÙ„ Ù„Ø§Ø­Ù‚Ø§Ù‹.' },
   standardHeaders: true,
   legacyHeaders: false,
   handler: async (req, res) => {
@@ -53,31 +53,31 @@ const apiLimiter = rateLimit({
         createdAt: Date.now()
       });
     } catch (e) { console.error('Failed to log security event:', e); }
-    res.status(429).json({ error: 'تم تجاوز الحد المسموح من الطلبات. حاول لاحقاً.' });
+    res.status(429).json({ error: 'ØªÙ… ØªØ¬Ø§ÙˆØ² Ø§Ù„Ø­Ø¯ Ø§Ù„Ù…Ø³Ù…ÙˆØ­ Ù…Ù† Ø§Ù„Ø·Ù„Ø¨Ø§Øª. Ø­Ø§ÙˆÙ„ Ù„Ø§Ø­Ù‚Ø§Ù‹.' });
   }
 });
 app.use('/api/', apiLimiter);
 // --- Suspicious IP activity tracking + auto-block (in-memory, resets on restart) ---
 const ipActivityMap = new Map(); // ip -> { count, firstSeen }
 const blockedIPs = new Map(); // ip -> blockedUntilTimestamp
-const SUSPICIOUS_THRESHOLD = 20; // عدد الطلبات
-const SUSPICIOUS_WINDOW_MS = 60 * 1000; // خلال دقيقة واحدة
-const BLOCK_DURATION_MS = 30 * 60 * 1000; // 30 دقيقة حظر
+const SUSPICIOUS_THRESHOLD = 20; // Ø¹Ø¯Ø¯ Ø§Ù„Ø·Ù„Ø¨Ø§Øª
+const SUSPICIOUS_WINDOW_MS = 60 * 1000; // Ø®Ù„Ø§Ù„ Ø¯Ù‚ÙŠÙ‚Ø© ÙˆØ§Ø­Ø¯Ø©
+const BLOCK_DURATION_MS = 30 * 60 * 1000; // 30 Ø¯Ù‚ÙŠÙ‚Ø© Ø­Ø¸Ø±
 
 app.use('/api/', async (req, res, next) => {
   const ip = req.ip || 'unknown';
   const now = Date.now();
 
-  // تحقق أولاً: هل هذا IP محظور حالياً؟
+  // ØªØ­Ù‚Ù‚ Ø£ÙˆÙ„Ø§Ù‹: Ù‡Ù„ Ù‡Ø°Ø§ IP Ù…Ø­Ø¸ÙˆØ± Ø­Ø§Ù„ÙŠØ§Ù‹ØŸ
   const blockedUntil = blockedIPs.get(ip);
   if (blockedUntil && blockedUntil > now) {
     const minutesLeft = Math.ceil((blockedUntil - now) / 60000);
     return res.status(403).json({
-      error: `تم حظر هذا العنوان مؤقتاً بسبب نشاط مشبوه. حاول بعد ${minutesLeft} دقيقة.`
+      error: `ØªÙ… Ø­Ø¸Ø± Ù‡Ø°Ø§ Ø§Ù„Ø¹Ù†ÙˆØ§Ù† Ù…Ø¤Ù‚ØªØ§Ù‹ Ø¨Ø³Ø¨Ø¨ Ù†Ø´Ø§Ø· Ù…Ø´Ø¨ÙˆÙ‡. Ø­Ø§ÙˆÙ„ Ø¨Ø¹Ø¯ ${minutesLeft} Ø¯Ù‚ÙŠÙ‚Ø©.`
     });
   }
   if (blockedUntil && blockedUntil <= now) {
-    blockedIPs.delete(ip); // انتهت مدة الحظر
+    blockedIPs.delete(ip); // Ø§Ù†ØªÙ‡Øª Ù…Ø¯Ø© Ø§Ù„Ø­Ø¸Ø±
   }
 
   const entry = ipActivityMap.get(ip);
@@ -86,25 +86,25 @@ app.use('/api/', async (req, res, next) => {
   } else {
     entry.count += 1;
     if (entry.count === SUSPICIOUS_THRESHOLD) {
-      // حظر فعلي تلقائي
+      // Ø­Ø¸Ø± ÙØ¹Ù„ÙŠ ØªÙ„Ù‚Ø§Ø¦ÙŠ
       blockedIPs.set(ip, now + BLOCK_DURATION_MS);
       try {
         await db.collection('securityEvents').add({
           type: 'suspicious_ip',
-          detail: `تم حظر IP ${ip} تلقائياً لمدة 30 دقيقة بعد إرسال ${SUSPICIOUS_THRESHOLD}+ طلب خلال دقيقة واحدة`,
+          detail: `ØªÙ… Ø­Ø¸Ø± IP ${ip} ØªÙ„Ù‚Ø§Ø¦ÙŠØ§Ù‹ Ù„Ù…Ø¯Ø© 30 Ø¯Ù‚ÙŠÙ‚Ø© Ø¨Ø¹Ø¯ Ø¥Ø±Ø³Ø§Ù„ ${SUSPICIOUS_THRESHOLD}+ Ø·Ù„Ø¨ Ø®Ù„Ø§Ù„ Ø¯Ù‚ÙŠÙ‚Ø© ÙˆØ§Ø­Ø¯Ø©`,
           ip,
           createdAt: Date.now()
         });
       } catch (e) { console.error('Failed to log suspicious IP:', e); }
       return res.status(403).json({
-        error: 'تم حظر هذا العنوان مؤقتاً بسبب نشاط مشبوه. حاول بعد 30 دقيقة.'
+        error: 'ØªÙ… Ø­Ø¸Ø± Ù‡Ø°Ø§ Ø§Ù„Ø¹Ù†ÙˆØ§Ù† Ù…Ø¤Ù‚ØªØ§Ù‹ Ø¨Ø³Ø¨Ø¨ Ù†Ø´Ø§Ø· Ù…Ø´Ø¨ÙˆÙ‡. Ø­Ø§ÙˆÙ„ Ø¨Ø¹Ø¯ 30 Ø¯Ù‚ÙŠÙ‚Ø©.'
       });
     }
   }
   next();
 });
 
-// --- نقطة لرفع حظر IP يدوياً من لوحة الإدارة ---
+// --- Ù†Ù‚Ø·Ø© Ù„Ø±ÙØ¹ Ø­Ø¸Ø± IP ÙŠØ¯ÙˆÙŠØ§Ù‹ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø© ---
 app.post('/api/admin/unblock-ip', async (req, res) => {
   try {
     const { ip } = req.body;
@@ -114,17 +114,17 @@ app.post('/api/admin/unblock-ip', async (req, res) => {
     blockedIPs.delete(ip);
     await db.collection('securityEvents').add({
       type: 'account_locked',
-      detail: `تم رفع حظر IP ${ip} يدوياً من لوحة الإدارة`,
+      detail: `ØªÙ… Ø±ÙØ¹ Ø­Ø¸Ø± IP ${ip} ÙŠØ¯ÙˆÙŠØ§Ù‹ Ù…Ù† Ù„ÙˆØ­Ø© Ø§Ù„Ø¥Ø¯Ø§Ø±Ø©`,
       ip,
       createdAt: Date.now()
     });
     res.json({ success: true });
   } catch (error) {
-    console.error('خطأ في رفع الحظر:', error);
+    console.error('Ø®Ø·Ø£ ÙÙŠ Ø±ÙØ¹ Ø§Ù„Ø­Ø¸Ø±:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
-// تنظيف دوري لخريطتي التتبع والحظر كل 5 دقائق
+// ØªÙ†Ø¸ÙŠÙ Ø¯ÙˆØ±ÙŠ Ù„Ø®Ø±ÙŠØ·ØªÙŠ Ø§Ù„ØªØªØ¨Ø¹ ÙˆØ§Ù„Ø­Ø¸Ø± ÙƒÙ„ 5 Ø¯Ù‚Ø§Ø¦Ù‚
 setInterval(() => {
   const now = Date.now();
   for (const [ip, entry] of ipActivityMap.entries()) {
@@ -187,7 +187,7 @@ app.post('/api/verify-purchase', async (req, res) => {
       (purchase.subscriptionState === 'SUBSCRIPTION_STATE_ACTIVE' ||
        purchase.subscriptionState === 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD');
     if (!isValid) {
-      return res.json({ success: false, error: 'الاشتراك منتهي الصلاحية' });
+      return res.json({ success: false, error: 'Ø§Ù„Ø§Ø´ØªØ±Ø§Ùƒ Ù…Ù†ØªÙ‡ÙŠ Ø§Ù„ØµÙ„Ø§Ø­ÙŠØ©' });
     }
     await db.collection('families').doc(familyId).update({
       subscriptionStatus: 'premium',
@@ -209,7 +209,7 @@ app.post('/api/verify-purchase', async (req, res) => {
 
     res.json({ success: true, expiresAt: expiresAtMillis });
   } catch (error) {
-    console.error('خطأ في التحقق من الشراء:', error);
+    console.error('Ø®Ø·Ø£ ÙÙŠ Ø§Ù„ØªØ­Ù‚Ù‚ Ù…Ù† Ø§Ù„Ø´Ø±Ø§Ø¡:', error);
     try {
       await db.collection('appErrors').add({
         type: 'purchase_error',
@@ -232,7 +232,7 @@ app.post('/api/admin/delete-family', async (req, res) => {
       try {
         await db.collection('securityEvents').add({
           type: 'malformed_request',
-          detail: `طلب حذف عائلة بحقول ناقصة من IP: ${req.ip}`,
+          detail: `Ø·Ù„Ø¨ Ø­Ø°Ù Ø¹Ø§Ø¦Ù„Ø© Ø¨Ø­Ù‚ÙˆÙ„ Ù†Ø§Ù‚ØµØ© Ù…Ù† IP: ${req.ip}`,
           ip: req.ip,
           createdAt: Date.now()
         });
@@ -240,13 +240,13 @@ app.post('/api/admin/delete-family', async (req, res) => {
       return res.status(400).json({ error: 'familyId and ownerUid are required' });
     }
 
-    // تحقق أن العائلة موجودة فعلاً قبل محاولة الحذف (كشف محاولات عشوائية)
+    // ØªØ­Ù‚Ù‚ Ø£Ù† Ø§Ù„Ø¹Ø§Ø¦Ù„Ø© Ù…ÙˆØ¬ÙˆØ¯Ø© ÙØ¹Ù„Ø§Ù‹ Ù‚Ø¨Ù„ Ù…Ø­Ø§ÙˆÙ„Ø© Ø§Ù„Ø­Ø°Ù (ÙƒØ´Ù Ù…Ø­Ø§ÙˆÙ„Ø§Øª Ø¹Ø´ÙˆØ§Ø¦ÙŠØ©)
     const targetDoc = await db.collection('families').doc(familyId).get();
     if (!targetDoc.exists) {
       try {
         await db.collection('securityEvents').add({
           type: 'unauthorized_admin_access',
-          detail: `محاولة حذف عائلة غير موجودة (familyId: ${familyId}) من IP: ${req.ip}`,
+          detail: `Ù…Ø­Ø§ÙˆÙ„Ø© Ø­Ø°Ù Ø¹Ø§Ø¦Ù„Ø© ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯Ø© (familyId: ${familyId}) Ù…Ù† IP: ${req.ip}`,
           ip: req.ip,
           createdAt: Date.now()
         });
@@ -256,7 +256,7 @@ app.post('/api/admin/delete-family', async (req, res) => {
     try {
       await authAdmin.deleteUser(ownerUid);
     } catch (authErr) {
-      console.error('تحذير: فشل حذف حساب Auth (قد يكون محذوفاً بالفعل):', authErr.message);
+      console.error('ØªØ­Ø°ÙŠØ±: ÙØ´Ù„ Ø­Ø°Ù Ø­Ø³Ø§Ø¨ Auth (Ù‚Ø¯ ÙŠÙƒÙˆÙ† Ù…Ø­Ø°ÙˆÙØ§Ù‹ Ø¨Ø§Ù„ÙØ¹Ù„):', authErr.message);
     }
     const collections = ['teachers', 'sessions', 'monthlyConfirmations', 'supportTickets'];
     for (const col of collections) {
@@ -268,7 +268,7 @@ app.post('/api/admin/delete-family', async (req, res) => {
     await db.collection('families').doc(familyId).delete();
     res.json({ success: true });
   } catch (error) {
-    console.error('خطأ في حذف العائلة:', error);
+    console.error('Ø®Ø·Ø£ ÙÙŠ Ø­Ø°Ù Ø§Ù„Ø¹Ø§Ø¦Ù„Ø©:', error);
     res.status(500).json({ success: false, error: error.message });
   }
 });
@@ -292,7 +292,7 @@ async function sendExpoPushNotification(pushToken, title, body) {
       })
     });
   } catch (err) {
-    console.error('فشل إرسال إشعار:', err.message);
+    console.error('ÙØ´Ù„ Ø¥Ø±Ø³Ø§Ù„ Ø¥Ø´Ø¹Ø§Ø±:', err.message);
   }
 }
 
@@ -302,7 +302,7 @@ function todayStr() {
 
 // Daily teacher reminder - 8 PM Oman time
 cron.schedule('0 16 * * *', async () => {
-  console.log('تشغيل: تذكير المدرّسين اليومي');
+  console.log('ØªØ´ØºÙŠÙ„: ØªØ°ÙƒÙŠØ± Ø§Ù„Ù…Ø¯Ø±Ù‘Ø³ÙŠÙ† Ø§Ù„ÙŠÙˆÙ…ÙŠ');
   try {
     const teachersSnap = await db.collection('teachers').where('status', '==', 'approved').get();
     const today = todayStr();
@@ -317,19 +317,19 @@ cron.schedule('0 16 * * *', async () => {
       if (sessionsToday.empty) {
         await sendExpoPushNotification(
           teacher.pushToken,
-          '📝 تذكير من TutorTrack',
-          'لم تسجّل أي حصة اليوم بعد. لا تنسَ تسجيل حصصك!'
+          'ðŸ“ ØªØ°ÙƒÙŠØ± Ù…Ù† TutorTrack',
+          'Ù„Ù… ØªØ³Ø¬Ù‘Ù„ Ø£ÙŠ Ø­ØµØ© Ø§Ù„ÙŠÙˆÙ… Ø¨Ø¹Ø¯. Ù„Ø§ ØªÙ†Ø³ÙŽ ØªØ³Ø¬ÙŠÙ„ Ø­ØµØµÙƒ!'
         );
       }
     }
   } catch (err) {
-    console.error('خطأ في تذكير المدرّسين:', err.message);
+    console.error('Ø®Ø·Ø£ ÙÙŠ ØªØ°ÙƒÙŠØ± Ø§Ù„Ù…Ø¯Ø±Ù‘Ø³ÙŠÙ†:', err.message);
   }
 }, { timezone: 'Asia/Muscat' });
 
 // Daily parent reminder - 9 PM Oman time
 cron.schedule('0 17 * * *', async () => {
-  console.log('تشغيل: تذكير أولياء الأمور اليومي');
+  console.log('ØªØ´ØºÙŠÙ„: ØªØ°ÙƒÙŠØ± Ø£ÙˆÙ„ÙŠØ§Ø¡ Ø§Ù„Ø£Ù…ÙˆØ± Ø§Ù„ÙŠÙˆÙ…ÙŠ');
   try {
     const familiesSnap = await db.collection('families').get();
     for (const familyDoc of familiesSnap.docs) {
@@ -342,19 +342,19 @@ cron.schedule('0 17 * * *', async () => {
       if (pendingSnap.size > 0) {
         await sendExpoPushNotification(
           family.pushToken,
-          '🔔 تذكير من TutorTrack',
-          `لديك ${pendingSnap.size} حصة بانتظار موافقتك`
+          'ðŸ”” ØªØ°ÙƒÙŠØ± Ù…Ù† TutorTrack',
+          `Ù„Ø¯ÙŠÙƒ ${pendingSnap.size} Ø­ØµØ© Ø¨Ø§Ù†ØªØ¸Ø§Ø± Ù…ÙˆØ§ÙÙ‚ØªÙƒ`
         );
       }
     }
   } catch (err) {
-    console.error('خطأ في تذكير أولياء الأمور:', err.message);
+    console.error('Ø®Ø·Ø£ ÙÙŠ ØªØ°ÙƒÙŠØ± Ø£ÙˆÙ„ÙŠØ§Ø¡ Ø§Ù„Ø£Ù…ÙˆØ±:', err.message);
   }
 }, { timezone: 'Asia/Muscat' });
 
 // Weekly summary - Friday 6 PM Oman time
 cron.schedule('0 14 * * 5', async () => {
-  console.log('تشغيل: الملخص الأسبوعي');
+  console.log('ØªØ´ØºÙŠÙ„: Ø§Ù„Ù…Ù„Ø®Øµ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ');
   try {
     const familiesSnap = await db.collection('families').get();
     const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
@@ -376,15 +376,49 @@ cron.schedule('0 14 * * 5', async () => {
         }, 0);
         await sendExpoPushNotification(
           family.pushToken,
-          '📊 ملخصك الأسبوعي',
-          `هذا الأسبوع: ${weekSessions.length} حصة بإجمالي ${total.toFixed(3)} ر.ع`
+          'ðŸ“Š Ù…Ù„Ø®ØµÙƒ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ',
+          `Ù‡Ø°Ø§ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹: ${weekSessions.length} Ø­ØµØ© Ø¨Ø¥Ø¬Ù…Ø§Ù„ÙŠ ${total.toFixed(3)} Ø±.Ø¹`
         );
       }
     }
   } catch (err) {
-    console.error('خطأ في الملخص الأسبوعي:', err.message);
+    console.error('Ø®Ø·Ø£ ÙÙŠ Ø§Ù„Ù…Ù„Ø®Øµ Ø§Ù„Ø£Ø³Ø¨ÙˆØ¹ÙŠ:', err.message);
   }
 }, { timezone: 'Asia/Muscat' });
 
 const PORT = process.env.PORT || 3000;
+
+app.post('/api/admin/broadcast-notification', async (req, res) => {
+  const { adminSecret, title, body, segment } = req.body;
+  if (adminSecret !== 'tt_admin_bc_24') return res.status(403).json({ error: 'Unauthorized' });
+  try {
+    const familiesSnap = await db.collection('families').get();
+    const tokens = [];
+    const now = Date.now();
+    familiesSnap.forEach(doc => {
+      const data = doc.data();
+      if (!data.pushToken || data.banned) return;
+      const isActive = data.subscriptionStatus === 'premium' && data.subscriptionExpiresAt > now;
+      const isTrial = data.subscriptionStatus === 'trial';
+      const isFree = !isActive && !isTrial;
+      if (segment === 'premium' && !isActive) return;
+      if (segment === 'trial' && !isTrial) return;
+      if (segment === 'free' && !isFree) return;
+      tokens.push(data.pushToken);
+    });
+    if (tokens.length === 0) return res.json({ sent: 0 });
+    const messages = tokens.map(token => ({ to: token, title, body }));
+    for (let i = 0; i < messages.length; i += 100) {
+      await fetch('https://exp.host/--/api/v2/push/send', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(messages.slice(i, i + 100)),
+      });
+    }
+    return res.json({ sent: tokens.length });
+  } catch (err) {
+    return res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
